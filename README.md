@@ -1,47 +1,92 @@
 # Base Acronis Cyber Platform API operations with PowerShell
 
-PowerShell is a very powerful scripting tool which is suitable for many management tasks. It’s very popular for managing Microsoft infrastructure and with PowerShell Core, it can be used for Linux workloads. So let's look deeply at how to use PowerShell to solve common tasks with the Acronis Cyber Platform API.
+!!! note The GitHub repository contains not only code for this Hans-on Lab but other advanced code examples. Please, check [Code Directory](#code-directory) for details.
 
-## Create an API Client to access the API
+[[TOC]]
 
-A JWT token with a limited time to life approach is used to securely manage access of any API clients, like our scripts, for example, to the Acronis Cyber Cloud. Using login and password for a specific user is not a secure and manageable way to create a token, but technically it's possible. Thus we create an API client with a client id and a client secret to use as credentials to issue a JWT token.
+## Code Directory
 
-To create an API Client we call the `/clients` end-point with POST request specifying in JSON body of the request a tenant we want to have access to. To authorize this the request, the Basic Authorization with user login and password for Acronis Cyber Cloud is used.
-***
-NOTE: In Acronis Cyber Cloud 9.0 an API Client credentials can be generated at the Management Portal.
-***
-NOTE: Normally, creating an API Client is a one-time process. As the API client is used to access the API, treat it as credentials and store securely. As well, do not store login and password in scripts itself.
-***
-In the following code block a login and a password are requested from a command line and a Basic Authorization header for HTTP requests are created.
+|File name       |File description
+|-----------------------------------|--------------------------
+|`0-basis-configuration.ps1`|Initialize global variables `$baseUrl`,`$partnerTenant`, `$customerTenant` and `$edition` from config files `cyber.platform.cfg.json`and `cyber.platform.cfg.defaults.json`.
+|`0-basis-api-check.ps1`|Base sanity checks need to be performed before the API calls.
+|`0-basis-functions.ps1`|Contains some utilities functions to simplify the API usage.
+|`1-create_client_to_access_api.ps1`   |Creates an API Client (`client_id`, `client_secret`) to generate a JWT token and access the API. The Basic Authentication is used. For Acronis Cyber Protect (Acronis Cyber Cloud 9.0) the Management Console can be used to create an API Client. The result of the script is stored in clear text `api_client.json` file. It's raw answer from the API call. For your solutions, please, implement secured storage for `client_id`, `client_secret` as they are credentials to access the API. The scrip asks for login and password to create an API Client.
+|`2-issue_token.ps1`     |Issue a JWT token to access the API. The token is expired in 2 hours. During the sanity checks in `0-basis-api-check.ps1` an expiration time for the current token is checked and a token is reissued if needed. The result of the script is stored in clear text `api_token.json` file. It's raw answer from the API call. For your solutions, please, implement secured storage for a JWT token info as they are credentials to access the API.
+|`3-0-create_partner_tenant.ps1`  |Creates a partner with name _MyFirstPartner_ and enables all available offering items for them for an edition, specified in json configuration files `cyber.platform.cfg.json` and  `cyber.platform.cfg.defaults.json`.
+|`3-1-create_customer_tenant.ps1`  |Creates a customer for _MyFirstPartner_ with name _MyFirstCustomer_ and enables all available offering items dor them for an edition, specified in json configuration files `cyber.platform.cfg.json` and  `cyber.platform.cfg.defaults.json`.
+|`3-2-create_user_activate.ps1`   |Creates a user for _MyFirstCustomer_ and activates them by sending an e-mail. The script asks for a username and an e-mail to create.
+|`4-get_tenant_usages.ps1`    |Gets usage for the root tenant.
+|`5-create_and_download_simple_report.ps1`  |Create an one time report to save for the root tenant, wait till its creation and download.
+|`6-get_agent_installation_token.ps1`|Create a token for the Acronis Agent installation.
+|`7-agent_installation.ps1`|An example of code for unattended the Acronis Agent installation.
+|`8-user_impersonalization.ps1`|Generate a link to impersonate a user.
+|`9-get_all_task_for_the_last_week.ps1`|Get all task completed the last 7 days.
+|`10-get_all_activities_for_the_last_week.ps1`|Get all activities completed the last 7 days.
+|`11-get_all_alerts_for_the_last_week.ps1`|Get all alerts updated the last 7 days.
+|`12-get_all_task_with_pagination.ps1`|An example of tasks pagination.
+|`13-get_all_activities_with_pagination.ps1`|An example of activities pagination.
+|`14-get_all_alerts_with_pagination.ps1`|An example of alerts pagination.
+|`15-get_all_agents_info.ps1`|Get list of all the Acronis Agent accessible for this API Client.
+|`16-get_all_agents_for_customer.ps1`|Get list of the Acronis Agents for specific customer.
+|`17-get_all_activities_for_the_last_week_for_backup_with_error.ps1`|An example of basic activities filtering: the last 7 days activities for backup ended with errors.
+|`results`|The results of code-edition or code-writing exercises.
+|`images`|The images for this guide.
+|`pdf`|This guide rendered to PDF format.
+|`LICENSE`       |The license for the code. It's MIT license.
+|`README.md`       |This file.
+|`cyber.platform.cfg.defaults.json` |Contains default configuration values for the scripts. They are used when the values are not defined in `cyber.platform.cfg.json` file.
+|`cyber.platform.cfg.json`   |Contains configuration values for the scripts.
 
-```powershell
+## The Acronis Cyber Platform API general workflow
+
+|#|Operation|When/Period|Prerequisites / Inputs
+|---|---|---|---
+|1| Create an API client under which an integration will be authorized |Initially.<br/><br/>Periodically if security policies require your company to regenerate all passwords each X months.<br/><br/>Through the API or the Management Portal for ACC 9.0 and greater. |Login and password with a needed level of access in Acronis Cyber Cloud.<br/><br/>Usually, it's a service Admin account under your company’s Partner tenant in Acronis Cyber Cloud.
+|2|Issue an access token|1. Before the first API Call which is not connected to the authorization flow<br/><br/>2. Each time when your token is near to be expired.|Your API Client credentials
+|3|Make API calls||An access token issued using your API Client credentials
+
+## Prerequisites and basis information
+
+To run the scripts, you need to edit or create the `cyber.platform.cfg.json` file to provide base parameters. At minimum you need to change `base_url` to your data center URL. The global variables `$baseUrl` initialized from the config file and used for all API requests. All other values can remain unchanged.
+A `cyber.platform.cfg.json` file example:
+
+```json
+{
+ "base_url": "https://dev-cloud.acronis.com/",
+ "partner_tenant": "partner",
+ "customer_tenant": "customer",
+ "edition": "standard"
+}
+```
+
+## Exercise 1: Create an API Client to access the API
+
+### Implementation details
+
+A JWT token with a limited time to life approach is used to securely manage access of any API clients, like our scripts, for the Acronis Cyber Cloud. Using a login and password for a specific user is not a secure and manageable way to create a token, but technically it's possible. Thus, we create an API client with a client id and a client secret to use as credentials to issue a JWT token.
+To create an API Client, we call the `/clients` end-point with POST request specifying in the JSON body of the request a tenant we want to have access to. To authorize this the request, the Basic Authorization with user login and password for Acronis Cyber Cloud is used.
+
+!!! note In Acronis Cyber Cloud 9.0 API Client credentials can be generated in the Management Portal.
+
+!!! note Creating an API Client is a one-time process. As the API client is used to access the API, treat it as credentials and store securely. Also, do not store the login and password in the scripts itself.
+
+In the following code block a login and a password are requested from a command line and use it for a Basic Authorization for following HTTP requests.
+
+```PowerShell
 # Get credentials from command line input
 $cred = (Get-Credential).GetNetworkCredential()
 
 # Use Login and Password to create an API client
 $login = $cred.UserName
 $password = $cred.Password
-
-# Manually construct Basic Authentication Header
-$pair = "${login}:${password}"
-$bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
-$base64 = [System.Convert]::ToBase64String($bytes)
-$basicAuthValue = "Basic $base64"
-$headers = @{ "Authorization" = $basicAuthValue }
 ```
 
-In those scripts it is expected that the [Acronis Developer Sandbox](https://developer.acronis.com/sandbox/) is used. It is available for registered developers at [Acronis Developer Network Portal](https://developer.acronis.com/). So the base URL for all requests (<https://dev-cloud.acronis.com/)> is used. Please, replace it with correct URL for your production environment if needed. For more details, please, review the [Authenticating to the platform via the Python shell tutorial](https://developer.acronis.com/doc/platform/management/v2/#/http/developer-s-guide/authenticating-to-the-platform-via-the-python-shell) from the Acronis Cyber Platform documentation.
+In those scripts it is expected that the [Acronis Developer Sandbox](https://developer.acronis.com/sandbox/) is used. It is available for registered developers at [Acronis Developer Network Portal](https://developer.acronis.com/). So the base URL for all requests (https://devcloud.acronis.com/) is used. Please, replace it with correct URL for your production environment if needed. For more details, please, review the [Authenticating to the platform via the Python shell tutorial](https://developer.acronis.com/doc/platform/management/v2/#/http/developer-s-guide/authenticating-to-the-platform-via-the-python-shell) from the Acronis Cyber Platform documentation.
 
-For demo purposes, this script issues an API client for a tenant for a user for whom a login and a password are specified. You should add your logic as to what tenant should be used for an API Client creation.
+For demo purposes, this script issues an API client for a tenant for a user for whom a login and a password are specified. You should add your logic as to what tenant should be used for the API Client creation.
 
-```powershell
-# Base URL for all requests -- replace with your own
-# Here we expected that you are in the sandbox available from Acronis Developer Network Portal
-$baseUrl = "https://dev-cloud.acronis.com/"
-
-# The request contains body with JSON
-$headers.Add("Content-Type", "application/json")
-
+```PowerShell
 # Get Self information to have tenant_id
 $myInfo = Invoke-RestMethod  -Uri "${baseUrl}api/2/users/me" -Headers $headers
 $tenantId = $myInfo.tenant_id
@@ -49,35 +94,60 @@ $tenantId = $myInfo.tenant_id
 # Body JSON, to request an API Client for the $tenantId
 $json = @"
 {
-    "type": "agent",
+    "type": "api_client",
     "tenant_id": "$tenantId",
     "token_endpoint_auth_method": "client_secret_basic",
     "data": {
-        "name": "PowerShell.App"
+        "client_name": "PowerShell.App"
     }
 }
 "@
-
-# Create an API Client
-$client = Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/clients" -Headers $headers -Body $json
 ```
 
-Finally, we need to securely store the received credentials. For simplicity of the demo code, a simple JSON format is used. Please implement secure storage for your client credentials.
+!!! note `client_name` value defines the name you will see in the ACC 9.0 Management Console. For real integrations, please, name it carefully to have a way to identify it in a future.
 
-```powershell
+```PowerShell
+# Create an API Client
+$client = Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/clients" -Headers $headers -Body $json
+
 # Save the API Client info to file for further usage
 # YOU MUST STORE YOUR CREDENTIALS IN SECURE PLACE
 # A FILE USES FOR CODE SIMPLICITY
 $client | ConvertTo-Json -Depth 100 | Out-File "api_client.json"
 ```
 
-## Issue a token to access the API
+!!! note A generated client is inherited access rights from a user used for the generation but it's disconnected from them. You don't need to issue a new client even if the user account is removed from Acronis Cloud.
+
+!!! warning Treat API Clients as a specific service account with access to your cloud. All internal security policies applied to your normal account operations should be in place for API Clients. Thus, don't create new API Clients if you don't really required and disable/delete unused API Clients through the Management Console or API Calls.
+
+!!! warning You can receive a `client_secret` only once, just at the issue time. If you loose your `client_secret` further you must reset secret for the client through the Management Console or API Calls. Please, be aware, that all the tokens will be invalidated.
+
+!!! danger You need to securely store the received credentials. For simplicity of the demo code, a simple JSON format is used for `api_client.json` file. Please remember to implement secure storage for your client credentials.
+
+### Step-by-step execution and checks
+
+1. Open any available `PowerShell` environment: Linux, Mac or Windows.
+2. Copy code directory to your local system and ensure that all `.ps1` files are executable in Linux and Mac cases. We will use Windows PowerShell for this instructions. Your directory listing should looks like bellow.
+![powershell HoL directory](images/pwsh_001.jpg)
+3. Edit  `cyber.platform.cfg.json` file to enter your `base_url` aka your data center URL for API calls. All other options remain unchanged.
+4. Type `1` and press `Tab`, it should autocomplete to the `.\1-create_client_to_access_api.ps1`.
+5. Press `Enter`. You should see a credentials request window.
+![powershell HoL directory](images/pwsh_002.jpg)
+Enter your username and password and press `OK`.
+6. If you enter login and password correctly, the script just makes a series of API calls silently and exit. If you make a mistake, you receive a detailed error description. For example, below an error you receive when your login or/and password are incorrect.
+![401 Unauthorized](images/pwsh_003.jpg)
+7. Type `.\api_client.json` and press `Enter`. You should see the JSON file is opened in your default JSON editor with an API Client information. In this tutorial, we use Visual Studio Code as the default editor. If you can see something similar to picture bellow, you successfully created an API Client and can follow to the next exercise.
+![api_client.json](images/pwsh_004.jpg)
+
+## Exercise 2: Issue a token to access the API
+
+### Implementation details
 
 A `client_id` and a `client_secret` can be used to access the API using the Basic Authorization but it's not a secure way as we discussed above. It's more secure to have a JWT token with limited life-time and implement a renew/refresh logic for that token.
 
-To issue a token `/idp/token` end-point is called using POST request with param `grant_type` equal `client_credentials` and content type `application/x-www-form-urlencoded` with Basic Authorization using a `client_id` as a user name and a `client_secret` as a password.
+To issue a token `/idp/token` end-point is called using `POST` request with param `grant_type` equal `client_credentials` and content type `application/x-www-form-urlencoded` with Basic Authorization using a `client_id` as a user name and a `client_secret` as a password.
 
-```powershell
+```PowerShell
 # Read an API Client info from a file and store client_id and client_secret in variables
 $client = Get-Content "api_client.json" | ConvertFrom-Json
 $clientId = $client.client_id
@@ -90,10 +160,6 @@ $base64 = [System.Convert]::ToBase64String($bytes)
 $basicAuthValue = "Basic $base64"
 $headers = @{ "Authorization" = $basicAuthValue }
 
-# Base URL for all requests -- replace with your own
-# Here we expected that you are in the sandbox available from Acronis Developer Network Portal
-$baseUrl = "https://dev-cloud.acronis.com/"
-
 # Use param to tell type of credentials we request
 $postParams = @{ grant_type = "client_credentials" }
 
@@ -101,11 +167,7 @@ $postParams = @{ grant_type = "client_credentials" }
 $headers.Add("Content-Type", "application/x-www-form-urlencoded")
 
 $token = Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/idp/token" -Headers $headers -Body $postParams
-```
 
-Finally, we need to securely store the received token. For simplicity of the demo code, the received JSON format is used. Please implement secured storage for your tokens.
-
-```powershell
 # Save the Token info to file for further usage
 # YOU MUST STORE YOUR CREDENTIALS IN SECURE PLACE
 # A FILE USES FOR CODE SIMPLICITY
@@ -113,12 +175,17 @@ Finally, we need to securely store the received token. For simplicity of the dem
 $token | ConvertTo-Json -Depth 100 | Out-File "api_token.json"
 ```
 
-A token has time-to-live and must be renewed/refreshed before expiration time. The best practice is to check before starting any API calls sequence and renew/refresh if needed. Assuming that the token stored in the JSON response format as above, it can be done using the following functions set.
+!!! danger You need to securely store the received token. For simplicity of the demo code, the received JSON format is used `api_token.json` file. Please implement secure storage for your tokens.
+
+!!! note A token has time-to-live and must be renewed/refreshed before expiration time. The best practice is to check before starting any API calls sequence and renew/refresh if needed.
+
+!!! note Currently, the default time-to-live to a token for the API is 2 hours.
+
+Assuming that the token is stored in the JSON response format as above, it can be done using the following functions set.
 
 `expires_on` is a time when the token will expire in Unix time format -- seconds from January 1, 1970. Here we assume that we will renew/refresh a token 15 minutes before the expiration time.
 
-```powershell
-# Check if the token valid at least 15 minutes
+```PowerShell
 # Check if the token valid at least 15 minutes
 function Confirm-Token {
 
@@ -189,91 +256,29 @@ function Update-Token {
 }
 ```
 
-## Create partner, customer and user tenants and set offering items
+### Step-by-step execution and checks
+
+1. Type `2` and press `Tab`, it should autocomplete to the `.\2-issue_token.ps1`.
+2. Press `Enter`. If `api_client.json` file exists and contains correct information, the script just makes a series of API calls silently and exit. If you make a mistake, you receive a detailed error description.
+3. Type `.\api_token.json` and press `Enter`. You should see the JSON file with a token information opened in your default editor. If you can see something similar to picture bellow, you successfully issued a token and can follow to the next exercise.
+![api_token.json](images/pwsh_005.jpg)
+4. Including `0-basis-api-check.ps1` file in each following scripts we ensure that a token will be reissued if needed before any API call.
+5. Check `0-basis-api-check.ps1` file to verify that you can understand implementation details described above.
+
+## Exercise 3: Create partner, customer and user tenants and set offering items
+
+### Implementation details
 
 So now we can securely access the Acronis Cyber Platform API calls. In this topic we discuss how to create a partner, a customer tenants and enable for them all available offering items, and then create a user for the customer and activate the user by setting a password.
 
-As it's mentioned above, we decided to enable all applications and offering items for both partner and customer tenants. Let's create a simple function to perform this task. Briefly, we take all available offering items for the parent tenant of the partner or the customer using GET request to `/tenants/${ParentTenantID}/offering_items/available_for_child` end-point with needed query parameters specifying `edition` and `kind` of the tenant. And finally, enabling this offering items for the partner or the customer using PUT request to `/tenants/${TenantID}/offering_items` end-point with all offering items JSON in the request body.
-
-```powershell
-# Enum for tenants kinds
-enum Kind {
-  root
-  partner
-  folder
-  customer
-  unit
-}
-
-# Simple function to enable all available offering items for child (partner or customer) tenant
-function Enable-AllOfferingItems {
-
-  [CmdletBinding()]
-  Param(
-    [parameter(Mandatory = $true)]
-    [string]
-    $BaseUrl,
-    [parameter(Mandatory = $true)]
-    [string]
-    $ParentTenantID,
-    [parameter(Mandatory = $true)]
-    [string]
-    $TenantID,
-    [parameter(Mandatory = $true)]
-    [System.Collections.IDictionary]
-    $AuthHeader,
-    [parameter(Mandatory = $false)]
-    [string]
-    $Edition = "standard",
-    [parameter(Mandatory = $false)]
-    [Kind]
-    $Kind = "customer"
-  )
-
-  $queryParameters = @{ edition = $Edition; kind = $Kind }
-
-  # Get Offering Items Available for the child tenants
-  $response = Invoke-RestMethod -Uri "${BaseUrl}api/2/tenants/${ParentTenantID}/offering_items/available_for_child" -Headers $AuthHeader -Body $queryParameters
-  # Take only array offering items
-  $offeringItems = $response.items
-
-  # The next API expected to have offering_items root
-  # Thus create needed JSON structure using offering_items as a root
-  $json = @{ offering_items = $offeringItems } | ConvertTo-Json -Depth 100
-
-  # Enable all offering items for the partner
-  Invoke-RestMethod -Method Put -Uri "${BaseUrl}api/2/tenants/${TenantID}/offering_items" -Headers $AuthHeader -Body $json
-
-}
-```
-
 As we discussed above, before making a call to the actual API you need to ensure that an authorization token is valid. Please, use the functions like those described above to do it.
 
-Assuming that we create the API client for our root tenant, we start from retrieving the API Client tenant information using GET request to `/clients/${clientId}` end-point. Then, using received `tenant_id` information as a parameter and `kind` equal to `partner`, we build a JSON body for POST request to `/tenants` end-point to create the partner. Next, we use previously described function `Enable-AllOfferingItems` to add applications and enable offering items. And as the final step do the same for a newly crated partner and create a customer for them.
-***
-NOTE: The following `kinds` of values are supported `root`, `partner`, `folder`, `customer`, `unit`.
-***
+Assuming that we create the API client for our root tenant, we start from retrieving the API Client tenant information using GET request to `/clients/${clientId}` end-point. Then, using received `tenant_id` information as a parameter and `kind` equal to `partner`, we build a JSON body for POST request to `/tenants` end-point to create the partner. Next, we are going to enable all applications and offering items for the tenants.  Briefly, we take all available offering items for the parent tenant of the partner or the customer using
+GET request to `/tenants/${tenantId}/offering_items/available_for_child` end-point with needed query parameters specifying `edition` and `kind` of the tenant. Then, we need to enable these offering items for the partner or the customer using PUT request to `/tenants/${tenantId}/offering_items` end-point with all offering items JSON in the request body and appropriate `tenantId`.
 
-```powershell
-# Base URL for all requests -- replace with your own
-# Here we expected that you are in the sandbox available from Acronis Developer Network Portal
-$baseUrl = "https://dev-cloud.acronis.com/"
+!!! note The following `kind` values are supported `root`, `partner`, `folder`, `customer`, `unit`.
 
-# check if token is valid ans renew if needed
-if (-Not (Confirm-Token)) {
-  $accessToken = Update-Token -BaseUrl $baseUrl
-}
-else {
-  # Read an token info from file
-  $token = Get-Content "api_token.json" | ConvertFrom-Json
-  $accessToken = $token.access_token
-}
-
-# Manually construct Bearer
-$bearerAuthValue = "Bearer $accessToken"
-$headers = @{ "Authorization" = $bearerAuthValue }
-
-
+```PowerShell
 # Get Root tenant_id for the API Client
 $client = Get-Content "api_client.json" | ConvertFrom-Json
 $clientId = $client.client_id
@@ -286,29 +291,33 @@ $json = @"
 {
     "name": "MyFirstPartner",
     "parent_id": "${tenantId}",
-    "kind": "partner"
+    "kind": "${partnerTenant}"
   }
 "@
-
-# The request contains body with JSON
-$headers.Add("Content-Type", "application/json")
 
 # Create a partner
 $partner = Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/tenants" -Headers $headers -Body $json
 $partnerId = $partner.id
 
-Enable-AllOfferingItems -BaseUrl $baseUrl -ParentTenantID $tenantId -TenantID $partnerId -AuthHeader $headers -Kind "partner"
+Enable-AllOfferingItems -BaseUrl $baseUrl -ParentTenantID $tenantId -TenantID $partnerId -AuthHeader $headers -Kind $partnerTenant
+
+# Save the JSON partner info into a file
+$partner | ConvertTo-Json -Depth 100 | Out-File "partner.json"
 ```
 
-This is absolutely the same process as for a customer, the only difference is `kind` equal to `customer` in the request body JSON.
+This is absolutely the same process as for a customer, the only difference is `kind` equal to `customer` in the request body JSON and `/offering_items/available_for_child` parameters.
 
-```powershell
+```PowerShell
+# Get a partner info
+$partner = Get-Content "partner.json" | ConvertFrom-Json
+$partnerId = $partner.id
+
 # Body JSON, to create a customer tenant
 $json = @"
 {
     "name": "MyCustomer",
     "parent_id": "${partnerId}",
-    "kind": "customer"
+    "kind": "${customerTenant}"
   }
 "@
 
@@ -316,15 +325,18 @@ $json = @"
 $customer = Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/tenants" -Headers $headers -Body $json
 $customerId = $customer.id
 
+# Save the JSON customer info into a file
+$customer | ConvertTo-Json -Depth 100 | Out-File "customer.json"
+
 Enable-AllOfferingItems -BaseUrl $baseUrl -ParentTenantID $partnerId -TenantID $customerId -AuthHeader $headers
 ```
 
-By default customers are created in a trial mode. To switch to production mode we need to update customer pricing. To perform this task, we start from requesting current pricing using GET request to `/tenants/${customerId}/pricing` end-point then change `mode` property to `production` in the received JSON, then, finally, update the pricing using PUT request to `/tenants/${customerId}/pricing` end-point with a new pricing JSON.
-***
-NOTE: Please, be aware, that this switch is non-revertible.
-***
+By default, customers are created in a trial mode. To switch to production mode we need to update customer pricing. To perform this task, we start from requesting current pricing using a GET request to
+`/tenants/${customerTenantId}/pricing` end-point then change `mode` property to `production` in the received JSON, then, finally, update the pricing using PUT request to `/tenants/${customerTenantId}/pricing` end-point with a new pricing JSON.
 
-```powershell
+!!! warning Please, be aware, that this switch is non-revertible.
+
+```PowerShell
 # Switching customer tenant to production mode
 $customerPricing = Invoke-RestMethod  -Uri "${baseUrl}api/2/tenants/${customerId}/pricing" -Headers $headers
 $customerPricing.mode = "production"
@@ -334,19 +346,23 @@ $customerPricingJson = $customerPricing | ConvertTo-Json
 Invoke-RestMethod -Method Put -Uri "${baseUrl}api/2/tenants/${customerId}/pricing" -Headers $headers -Body $customerPricingJson
 ```
 
-Finally, we create a user for the customer. At first we check if a login is available using GET request to `/users/check_login` end-point with `username` parameter set to an expected login. Then, we create a JSON body for POST request to `/users` end-point to create a new user.
+Finally, we create a user for the customer. At first, we check if a login is available using GET request to `/users/check_login` end-point with `username` parameter set to an expected login. Then, we create a JSON body for POST request to `/users` end-point to create a new user.
 
-```powershell
-$userLogin = "MyFirstUser"
-$userLoginParam = @{username=$userLogin}
+```PowerShell
+# Get a customer info
+$customer = Get-Content "customer.json" | ConvertFrom-Json
+$customerId = $customer.id
+
+$userLogin = Read-Host  -Prompt "Enter expected user login:"
+$userLoginParam = @{username = $userLogin }
 
 $response = Invoke-WebRequest  -Uri "${baseUrl}api/2/users/check_login" -Headers $headers -Body $userLoginParam
 
-# Check if login name is not used
-if ($response.StatusCode -eq 204){
+# Check if login name is free
+if ($response.StatusCode -eq 204) {
 
 # Body JSON, to create a user
-$json = @"
+  $json = @"
 {
   "tenant_id": "${customerId}",
   "login": "${userLogin}",
@@ -358,19 +374,22 @@ $json = @"
 }
 "@
 
-$user = Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/users" -Headers $headers -Body $json
-$userId = $user.id
+  $user = Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/users" -Headers $headers -Body $json
+  $userId = $user.id
+
+  # Save the JSON user info into a file
+  $user | ConvertTo-Json -Depth 100 | Out-File "user.json"
 }
 ```
 
-A created user is not active. To activate them we can either send them an activation e-mail or set them a password. The sending of an activation e-mail is the preferable way, as in this case a user can set their own password by themselves. We use a password way as for demo purposes a fake e-mail is used. To set a password we send a simple JSON and POST request to `/users/${userId}/password` end-point.
+A created user is not active. To activate them we can either send them an activation e-mail or set them a password. The sending of an activation e-mail is the preferable way, as in this case a user can set their own password by themselves. We use a set password way for demo purposes and a fake e-mail is used. To set a password we send a simple JSON and POST request to `/users/${userId}/password` end-point.
 
-```powershell
+```PowerShell
 # Body JSON, to assign a password and activate the user
-# NEVER STORE A PASSWORD IN PLAIN TEXT FILE
-# THIS CODE IS FOR API DEMO PURPOSES ONLY
-# AS IT USES FAKE E-MAIL AND ACTIVATION E-MAIL CAN'T BE SENT
-$json = @"
+  # NEVER STORE A PASSWORD IN PLAIN TEXT FILE
+  # THIS CODE IS FOR API DEMO PURPOSES ONLY
+  # AS IT USES FAKE E-MAIL AND ACTIVATION E-MAIL CAN'T BE SENT
+  $json = @"
 {
   "password": "MyStrongP@ssw0rd"
 }
@@ -381,31 +400,160 @@ Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/users/${userId}/password" -
 
 At this point, we've created a partner, a customer, enable offering items for them, create a user and activate them.
 
-## Get a tenant usage
+### Step-by-step execution and checks
 
-A very common task is to check a tenant’s usage. It's quite a simple task. We just need to make a GET request to `/tenants/${tenantId}/usages` end-point, as result we receive a list with current usage information in JSON format.
+#### Create partner and enable all available standard edition offering items
 
-```powershell
-# Base URL for all requests -- replace with your own
-# Here we expected that you are in the sandbox available from Acronis Developer Network Portal
-$baseUrl = "https://dev-cloud.acronis.com/"
+1. Type `3-0` and press `Tab`, it should autocomplete to the `.\3-0-create_partner_tenant.ps1`.
+2. Press `Enter`. If `api_client.json` file exists and contains correct information, the script just makes a series of API calls, display list of offering items set and exit. If you make a mistake, you receive a detailed error description.
+![partner](images/pwsh_006.jpg)
+3. Type `.\partner.json` and press `Enter`. You should see the JSON file with a partner information opened in your default editor. If you can see something similar to picture bellow, you successfully created a partner.
+![partner.json](images/pwsh_007.jpg)
+4. Open the Management Portal and check that a new partner with name _MyFirstPartner_ was created and for them all offering items for standard edition were enabled.
+![Management Portal](images/pwsh_008.jpg)
 
-# check if token is valid ans renew if needed
-if (-Not (Confirm-Token)) {
-  $accessToken = Update-Token -BaseUrl $baseUrl
-}
-else {
-  # Read an token info from file
-  $token = Get-Content "api_token.json" | ConvertFrom-Json
-  $accessToken = $token.access_token
-}
+#### Create customer, enable all available standard edition offering items and switch to production mode
 
+1. Type `3-1` and press `Tab`, it should autocomplete to the `.\3-1-create_customer_tenant.ps1`.
+2. Press `Enter`. If `api_client.json` file exists and contains correct information, the script just makes a series of API calls, display list of offering items set and exit. If you make a mistake, you receive a detailed error description.
+![customer](images/pwsh_006.jpg)
+3. Type `.\customer.json` and press `Enter`. You should see highlighted JSON file with a customer information. If you can see something similar to picture bellow, you successfully created a customer.
+![customer.json](images/pwsh_009.jpg)
+4. Open the Management Portal and check that a new customer with name _MyFirstCustomer_ was created under _MyFirstPartner_ and for them all offering items for standard edition were enabled.
+![Management Portal](images/pwsh_010.jpg)
 
-# Manually construct Bearer
-$bearerAuthValue = "Bearer $accessToken"
-$headers = @{ "Authorization" = $bearerAuthValue }
+#### Create user, activate them by setting a password and enable backup services
 
+1. Type `3-2` and press `Tab`, it should autocomplete to the `.\3-2-create_user_activate.ps1`.
+2. Press `Enter`. You should see request for expected username. Type it and press `Enter`.
+![Username](images/pwsh_011.jpg)
+3. If `api_client.json` file exists and contains correct information, and a user with this username doesn't exists, the script just makes a series of API calls silently and exit. If a user with provided username exists or any other issue exists, you receive a detailed error description.
+![User exists](images/pwsh_012.jpg)
+4. Type `.\user.json` and press `Enter`. You should see the JSON file with a user information opened in your default editor. If you can see something similar to picture bellow, you successfully created and activated a user.
+![User info](images/pwsh_013.jpg)
+5. Open the Management Portal and check that a new user with provided username was created  under _MyFirstCustomer_ and it's in an active state.
+![Management Portal](images/pwsh_014.jpg)
 
+!!! note The created user has no roles assigned. It means it can't use any service. To enable services/applications you need to assign an appropriate role to a user. In next steps you will create a bash script to assign the created user `backup_user` role to enable backup services.
+
+6. Copy `3-2-create_user_activate.ps1` file to `6-assign-user-backup-role.ps1` using following command `copy 3-2-create_user_activate.ps1 6-assign-user-backup-role.ps1`.
+
+!!! note All operations with the user account roles are located under the `/users/{user_id}/access_policies` endpoint.
+
+!!! note To build a JSON to assign a role for a user `id` and user `personal_tenant_id` need to be known. All these values can be retrieved from the `user.json` file we've received as result of the user creation API call.
+
+7. In your preferred editor, open and edit the `6-assign-user-backup-role.ps1`. In our following instructions `Visual Studio Code` editor is used. To open the file in `Visual Studio Code` editor, type `code .\6-assign-user-backup-role.ps1` and press `Enter`.
+![vscode](images/pwsh_015.jpg)
+8. Find the following code in the file
+
+```PowerShell
+# Get a customer info
+$customer = Get-Content "customer.json" | ConvertFrom-Json
+$customerId = $customer.id
+```
+
+and edit it to work with `user.json`
+
+```PowerShell
+# Get a user info
+$user = Get-Content "user.json" | ConvertFrom-Json
+$userId = $user.id
+```
+
+9. Then `personal_tenant_id` should be retrieved from `user.json` file. So just add after
+
+```PowerShell
+$userId = $user.id
+```
+
+the following code
+
+```PowerShell
+$userPersonalTenantId = $user.personal_tenant_id
+```
+
+10. Now all the information to build a JSON body for our request to the API endpoint. Just after thr previous `$userPersonalTenantId` code, enter the following code
+
+```PowerShell
+$json = @"
+{"items": [
+     {"id": "00000000-0000-0000-0000-000000000000",
+     "issuer_id": "00000000-0000-0000-0000-000000000000",
+     "role_id": "backup_user",
+     "tenant_id": "${userPersonalTenantId}",
+     "trustee_id": "${userId}",
+     "trustee_type": "user",
+     "version": 0}
+     ]}
+"@
+```
+
+You can find more information regarding JSON format in the API documentation https://developer.acronis.com/doc/platform/management/v2/#/http/models/structures/access-policy.
+
+11. And finally as all the data ready, let's add code to call the API. To update a user access policy `/users/${userId}/access_policies` end-point is called using `PUT` request with Bearer Authentication and a JSON body.
+12. Find the following code in the end of the file and copy it below the JSON
+
+```PowerShell
+ Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/users/${userId}/password" -Headers $headers -Body $json
+```
+
+13. Edit this code to make appropriate `PUT` call
+
+```bash
+Invoke-RestMethod -Method Put -Uri "${baseUrl}api/2/users/${userId}/access_policies" -Headers $headers -Body $json
+```
+
+14. Delete all other code below the edited. So finally you should have the following code in the file.
+
+```PowerShell
+#**************************************************************************************************************
+# Copyright © 2019-2020 Acronis International GmbH. This source code is distributed under MIT software license.
+#**************************************************************************************************************
+
+# include common functions
+. ".\0-basis-functions.ps1"
+
+# include base configuration
+. ".\0-basis-configuration.ps1"
+
+# include basis API checks
+. ".\0-basis-api-check.ps1"
+
+# Get a customer info
+$user = Get-Content "user.json" | ConvertFrom-Json
+$userId = $user.id
+$userPersonalTenantId = $user.personal_tenant_id
+
+$json = @"
+{"items": [
+     {"id": "00000000-0000-0000-0000-000000000000",
+     "issuer_id": "00000000-0000-0000-0000-000000000000",
+     "role_id": "backup_user",
+     "tenant_id": "${userPersonalTenantId}",
+     "trustee_id": "${userId}",
+     "trustee_type": "user",
+     "version": 0}
+     ]}
+"@
+
+Invoke-RestMethod -Method Put -Uri "${baseUrl}api/2/users/${userId}/access_policies" -Headers $headers -Body $json
+```
+
+15. Save it. Exit the editor. Type `6` and press `Tab`, it should autocomplete to the `.\6-assign-user-backup-role.ps1`.
+16. Press `Enter`. If `api_client.json` file exists and contains correct information, the script just makes an API call and return current list of the user access policies and exit. If you make a mistake, you receive a detailed error description.
+![Access policies](images/pwsh_016.jpg)
+17.  Open the Management Portal and check that the user has the assigned role.
+![Management Portal](images/pwsh_017.jpg)
+
+## Exercise 4: Get a tenant usage
+
+### Implementation details
+
+A very common task is to check a tenant’s usage. It's a simple task. We just need to make a GET request to `/tenants/${tenantId}/usages` end-point, as result we receive a list with current usage information in JSON format.
+
+!!! warning The information about a service usage of the tenant, provided by the `/tenants/${tenantId}/usages` endpoint, is updated on average every 5-6 hours and must not be used for billing purposes.
+
+```PowerShell
 # Get Root tenant_id for the API Client
 $client = Get-Content "api_client.json" | ConvertFrom-Json
 $clientId = $client.client_id
@@ -415,40 +563,31 @@ $tenantId = $apiClientInfo.tenant_id
 
 # Get Usage List for specific tenant
 $itemsList = Invoke-RestMethod  -Uri "${baseUrl}api/2/tenants/${tenantId}/usages" -Headers $headers
-```
 
-It's very useful to store usage information for further processing. In our example we use response JSON format to store it in a file.
-
-```powershell
 # Save JSON usages info into a file
 $itemsList | ConvertTo-Json -Depth 100 | Out-File "${tenantId}_usages.json"
 ```
 
-## Create and download simple report
+!!! note It's very useful to store usage information for further processing. In our example we use response JSON format to store it in a file.
 
-The reporting capability of the Acronis Cyber Cloud gives you advanced capabilities to understand usage. In following simple example we create an one time report in csv format, and then download it. To check other options, please, navigate to the Acronis Cyber Platform [documentation](https://developer.acronis.com/doc/platform/management/v2/#/http/developer-s-guide/managing-reports).
+### Step-by-step execution and checks
 
-To create a report we build a body JSON and make a POST request to `/reports` end-point. Then we look into stored reports with specified `$report.id` making a GET request to `/reports/${reportId}/stored` end-point.
+1. Type `4` and press `Tab`, it should autocomplete to the `.\4-get_tenant_usages.ps1`.
+2. Press `Enter`. If `api_client.json` file exists and contains correct information, the script just makes a series of API calls silently and exit. If you make a mistake, you receive a detailed error description.
+3. Type `dir *_usages.json` and press `Enter`. You should see the created file name for the usage.
+![usage file name](images/pwsh_018.jpg)
+4. Type the name of file you found at the previous step and press `Enter`. You should see the JSON file with a usage information opened in your default editor. If you can see something similar to picture bellow, you successfully retrieve the usage.
+![Usage](images/pwsh_019.jpg)
 
-```powershell
-# Base URL for all requests -- replace with your own
-# Here we expected that you are in the sandbox available from Acronis Developer Network Portal
-$baseUrl = "https://dev-cloud.acronis.com/"
+## Exercise 5: Create and download simple report
 
-# check if token is valid ans renew if needed
-if (-Not (Confirm-Token)) {
-  $accessToken = Update-Token -BaseUrl $baseUrl
-}
-else {
-  # Read an token info from file
-  $token = Get-Content "api_token.json" | ConvertFrom-Json
-  $accessToken = $token.access_token
-}
+### Implementation details
 
-# Manually construct Bearer
-$bearerAuthValue = "Bearer $accessToken"
-$headers = @{ "Authorization" = $bearerAuthValue }
+The reporting capability of the Acronis Cyber Cloud gives you advanced capabilities to understand usage. In the following simple example, we create a one-time report in csv format, and then download it. To check other options, please, navigate to the Acronis Cyber Platform [documentation](https://developer.acronis.com/doc/platform/management/v2/#/http/developer-s-guide/managing-reports).
 
+To create a report to `save`, we build a body JSON and make a POST request to `/reports` end-point. Then we look into stored reports with specified `$reportId` making a GET request to `/reports/${reportId}/stored` endpoint.
+
+```PowerShell
 # Get Root tenant_id for the API Client
 $client = Get-Content "api_client.json" | ConvertFrom-Json
 $clientId = $client.client_id
@@ -464,7 +603,7 @@ $json = @"
         "tenant_id": "$tenantId",
         "level": "accounts",
         "formats": [
-            "csv"
+            "csv_v2_0"
         ]
     },
     "schedule": {
@@ -473,9 +612,6 @@ $json = @"
     "result_action": "save"
 }
 "@
-
-# Add the request content type to the headers
-$headers.Add("Content-Type", "application/json")
 
 # Create a report
 $report = Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/reports" -Headers $headers -Body $json
@@ -496,29 +632,109 @@ do {
 # For sample purposes we use 1 report from stored -- as we use once report
 # MUST BE CHANGED if you want to deal with scheduled one or you have multiple reports
 $storedReportId = $storedReportInfo.items[0].id
-```
 
-And finally we download created report using a GET request to `/reports/${reportId}/stored/${storedReportId}` and save it in `${storedReportId}_report.csv` file for further processing.
-
-```powershell
 # Download the report
 Invoke-WebRequest  -Uri "${baseUrl}api/2/reports/${reportId}/stored/${storedReportId}" -Headers $headers -OutFile "${storedReportId}_report.csv"
 ```
 
+### Step-by-step execution and checks
+
+1. Type `5-` and press `Tab`, it should autocomplete to the `.\5-create_and_download_simple_report.ps1`.
+2. Press `Enter`. If `api_client.json` file exists and contains correct information, the script just makes a series of API calls silently and then download report. If you make a mistake, you receive a detailed error description.
+3. Type `dir *report*.json` and press `Enter`. You should see the created file name for the report.
+![Created Report](images/pwsh_020.jpg)
+4. Type the name of file you found at the previous step and press `Enter`. You should see the JSON file with the crated report information opened in your default editor. If you can see something similar to picture bellow, you successfully created the report.
+![Created Report](images/pwsh_021.jpg)
+5. Type `dir *_report.csv` and press `Enter`. You should see the download report file.
+![Downloaded Report](images/pwsh_022.jpg)
+5. Use any appropriate editor to open this `.csv` file.
+
+## Exercise 6: Add marks to your API calls for better support
+
+### Implementation details
+
+It's technically possibly to identify your API calls as they are connected to your API Client. But still it's required a lot of efforts and hard to find in your Audit log at the Management Portal for your. Thus to better support your development effort it would be a great idea to identify your integrations and API calls somehow. Traditional way to do it in a RESTFul word is using the `User-Agent` header.
+
+There are common recommendations how to build your `User-Agent` header:
+
+```text
+User-Agent: <product>/<product-version> <comment>
+```
+
+For example, for our hands-on lab, you can use:
+
+```text
+User-Agent: Training/1.0 Acronis #CyberFit Developers Business Automation Training
+```
+
+To implement it using our `bash` examples, we need just add the header to each `Invoke-RestMethod` call using API:
+
+```PowerShell
+$headers.Add("User-Agent", "Training/1.0 Acronis #CyberFit Developers Business Automation Training")
+```
+
+!!! Warning Please, for a real integration, use your real integration name, a specific version and suitable comments to simplify your support.
+
+### Step-by-step execution and checks
+
+1. Copy `0-basis-api-check.ps1` file to `0-basis-api-check_with_user_agent.ps1` using following command `copy 0-basis-api-check.ps1 0-basis-api-check_with_user_agent.ps1`.
+2. In your preferred editor, open and edit the `0-basis-api-check_with_user_agent.ps1`.
+3. At the end of the file just find
+
+```PowerShell
+$headers.Add("Content-Type", "application/json")
+```
+
+and right after this line insert the following
+
+```PowerShell
+$headers.Add("User-Agent", "Training/1.0 Acronis #CyberFit Developers Business Automation Training")
+```
+
+4. Save the file. Exit the editor.
+5. Rename `0-basis-api-check.ps1` file to `0-basis-api-check_old.ps1` using following command `ren 0-basis-api-check.ps1 0-basis-api-check_old.ps1`.
+6. Rename `0-basis-api-check_with_user_agent.ps1` file to `0-basis-api-check_with.ps1` using following command `ren 0-basis-api-check_with_user_agent.ps1 0-basis-api-check.ps1`.
+7. So now, in all the code files except `1-create_client_to_access_api.ps1` and `2-issue_token.ps1`, all the API call will executed with specific `User-Agent`.
+
+!!! warning We will create an API Client in the next step for demo purposes only. Don't forget to delete it after the exercise.
+
+8. To check how our `User-Agent` affects an audit log you can see in the Management Portal, let's create a new API Client.
+9. In your preferred editor, open and edit the `1-create_client_to_access_api.ps1`.
+10. Find in the file the following line
+
+```PowerShell
+$headers.Add("Content-Type", "application/json")
+```
+
+and right after this line insert the following
+
+```PowerShell
+$headers.Add("User-Agent", "Training/1.0 Acronis #CyberFit Developers Business Automation Training")
+```
+
+11. Save the file. Exit the editor.
+12 . Rename `api_client.json` file to `api_client_old.json` using following command `ren api_client.json api_client_old.json`. We ara planing to delete the new API Client, so we need to store our previous one.
+13. Type `1` and press `Tab`, it should autocomplete to the `.\1-create_client_to_access_api.ps1`.
+14. Press `Enter`. You should see request for login. Type it and press `Enter`. You should see request for password. Type it and press `Enter`
+15. If you enter login and password correctly, the script just makes a series of API calls silently and exit. If you make a mistake, you receive a detailed error description.
+16. Login to the Management Portal and check how our request are represented in the Audit log.
+![Audit Log](images/pwsh_023.jpg)
+
+!!! warning Don't forget to move the old client JSON file back and delete the new client if you don't plan to use it further.
+
 ## Summary
 
-Now you know how to with the Acronis Cyber Platform API:
+Now you know how to use base operations with the Acronis Cyber Platform API:
 
 1. Create an API Client for the Acronis Cyber Platform API access
 2. Issue a token for secure access for the API
 3. Establish a simple procedure to renew/refresh the token
 4. Create a partner and a customer tenants and enable offering items for them.
 5. Create a user for a customer tenant and activate them.
-6. Receive simple usage information for a tenant.
-7. Create and download reports for usage.
+6. Enable services for a user by assigning a role.
+7. Receive simple usage information for a tenant.
+8. Create and download reports for usage.
 
-Get started today, register on the [Acronis Developer Portal](https://developer.acronis.com/) and see the code samples available, also you can review solutions available in the [Acronis Cyber Cloud Solutions Portal](https://solutions.acronis.com/).
+Get started today, register on the [Acronis Developer Portal](https://developer.acronis.com/) and see the code samples available, you can also review solutions available in the [Acronis Cyber Cloud Solutions Portal](https://solutions.acronis.com/).
 
-***
-Copyright © 2019-2020 Acronis International GmbH. This is distributed under MIT license.
-***
+!!! info Copyright © 2019-2020 Acronis International GmbH. This is distributed under MIT license.

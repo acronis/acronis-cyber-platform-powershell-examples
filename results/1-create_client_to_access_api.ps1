@@ -21,7 +21,7 @@ $headers = @{ "Authorization" = $basicAuthValue }
 
 # The request contains body with JSON
 $headers.Add("Content-Type", "application/json")
-$headers.Add("User-Agent", "ACP 1.0/Acronis Cyber Platform PowerShell Examples")
+$headers.Add("User-Agent", "Training/1.0 Acronis #CyberFit Developers Business Automation Training")
 
 # Get Self information to have tenant_id
 $myInfo = Invoke-RestMethod  -Uri "${baseUrl}api/2/users/me" -Headers $headers
@@ -30,7 +30,7 @@ $tenantId = $myInfo.tenant_id
 # Body JSON, to request an API Client for the $tenantId
 $json = @"
 {
-    "type": "api_client",
+    "type": "agent",
     "tenant_id": "$tenantId",
     "token_endpoint_auth_method": "client_secret_basic",
     "data": {

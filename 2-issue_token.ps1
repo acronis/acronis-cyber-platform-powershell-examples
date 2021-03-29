@@ -2,6 +2,9 @@
 # Copyright © 2019-2020 Acronis International GmbH. This source code is distributed under MIT software license.
 #**************************************************************************************************************
 
+# include base configuration
+. ".\0-basis-configuration.ps1"
+
 # Read an API Client info from a file and store client_id and client_secret in variables
 $client = Get-Content "api_client.json" | ConvertFrom-Json
 $clientId = $client.client_id
@@ -14,15 +17,12 @@ $base64 = [System.Convert]::ToBase64String($bytes)
 $basicAuthValue = "Basic $base64"
 $headers = @{ "Authorization" = $basicAuthValue }
 
-# Base URL for all requests -- replace with your own
-# Here we expected that you are in the sandbox available from Acronis Developer Network Portal
-$baseUrl = "https://dev-cloud.acronis.com/"
-
 # Use param to tell type of credentials we request
 $postParams = @{ grant_type = "client_credentials" }
 
 # Add the request content type to the headers
 $headers.Add("Content-Type", "application/x-www-form-urlencoded")
+$headers.Add("User-Agent", "ACP 1.0/Acronis Cyber Platform PowerShell Examples")
 
 $token = Invoke-RestMethod -Method Post -Uri "${baseUrl}api/2/idp/token" -Headers $headers -Body $postParams
 

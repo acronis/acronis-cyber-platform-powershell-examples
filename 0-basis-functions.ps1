@@ -30,7 +30,7 @@ function Enable-AllOfferingItems {
     $AuthHeader,
     [parameter(Mandatory = $false)]
     [string]
-    $Edition = "standard",
+    $Edition = "per_workload",
     [parameter(Mandatory = $false)]
     [Kind]
     $Kind = "customer"
@@ -42,6 +42,28 @@ function Enable-AllOfferingItems {
   $response = Invoke-RestMethod -Uri "${BaseUrl}api/2/tenants/${ParentTenantID}/offering_items/available_for_child" -Headers $AuthHeader -Body $queryParameters
   # Take only array offering items
   $offeringItems = $response.items
+
+  if  ($Kind -eq "customer") {
+    # collect all unique infra_id list from available offering items separated by coma
+    $infraIds = ($offeringItems | Where-Object {$_.infra_id}).infra_id | Sort-Object | Get-Unique | Join-String -Separator ','
+
+    $queryParameters = @{ uuids = $infraIds}
+
+    $response = Invoke-RestMethod -Uri "${BaseUrl}api/2/infra" -Headers $AuthHeader -Body $queryParameters
+
+    # create a list of capabilities of storages which Count > 1
+    $capabilities = ($response.items.capabilities | Group-Object | Where-Object Count -GT 1).Name
+
+    # For demo purposes
+    # We just filter out first infrastructure (storage) with the same capability
+    # You need to implement your logic
+    foreach($capability in $capabilities){
+
+      $offeringItems = $offeringItems | Where-Object -Property infra_id -NE ($response.items | Where-Object -Property capabilities -Contains $capability)[1].id
+
+    }
+
+  }
 
   # The next API expected to have offering_items root
   # Thus create needed JSON structure using offering_items as a root
@@ -108,6 +130,7 @@ function Update-Token {
 
   # Add the request content type to the headers
   $headers.Add("Content-Type", "application/x-www-form-urlencoded")
+  $headers.Add("User-Agent", "ACP 1.0/Acronis Cyber Platform PowerShell Examples")
 
   $token = Invoke-RestMethod -Method Post -Uri "${BaseUrl}api/2/idp/token" -Headers $headers -Body $postParams
 
@@ -119,4 +142,43 @@ function Update-Token {
 
   $token.access_token
 
+}
+
+function Acronis-Get {
+  [CmdletBinding()]
+  Param(
+    [parameter(Mandatory = $true)]
+    [string]
+    $Uri,
+    [System.Object]
+    $Body)
+
+  return Invoke-RestMethod -Uri "${baseUrl}${Uri}" -Headers $headers -Body $Body
+
+}
+
+function Acronis-Post {
+  [CmdletBinding()]
+  Param(
+    [parameter(Mandatory = $true)]
+    [string]
+    $Uri,
+    [System.Object]
+    $Body
+    )
+
+    return Invoke-RestMethod -Method Post -Uri "${baseUrl}${Uri}" -Headers $headers -Body $Body
+}
+
+function Acronis-Put {
+  [CmdletBinding()]
+  Param(
+    [parameter(Mandatory = $true)]
+    [string]
+    $Uri,
+    [System.Object]
+    $Body
+    )
+
+    return Invoke-RestMethod -Method Put -Uri "${baseUrl}${Uri}" -Headers $headers -Body $Body
 }
