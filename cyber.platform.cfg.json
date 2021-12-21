@@ -2,5 +2,5 @@
  	"baseUrl": "https://dev-cloud.acronis.com/",
 	"partnerTenant": "partner",
 	"customerTenant": "customer",
-	"edition": "per_workload"
+	"edition": "pck_per_workload"
 }

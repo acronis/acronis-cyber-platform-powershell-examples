@@ -1,0 +1,186 @@
+{
+    "subject": {
+        "ignore_policy_and_tenant_ids": true,
+        "override_tenant_id": true,
+        "disable_applications_on_conflict": true,
+        "policy": [
+            {
+                "id": "{{parent_plan_uuid}}",
+                "type": "policy.protection.total",
+                "name": "Demo Plan",
+                "origin": "upstream",
+                "enabled": true,
+                "template_source_id": "",
+                "plan_hash": "",
+                "source_type": "",
+                "days_without_backup_alert": null,
+                "ls_features": ""
+            },
+            {
+                "id": "{{plan_uuid}}",
+                "parent_ids": [
+                    "{{parent_plan_uuid}}"
+                ],
+                "type": "policy.backup.machine",
+                "origin": "upstream",
+                "enabled": true,
+                "settings_schema": "2.0",
+                "settings": {
+                    "compression": "normal",
+                    "format": "auto",
+                    "multi_volume_snapshotting_enabled": true,
+                    "preserve_file_security_settings": true,
+                    "reattempts": {
+                        "enabled": true,
+                        "interval": {
+                            "type": "seconds",
+                            "count": 30
+                        },
+                        "max_attempts": 30
+                    },
+                    "silent_mode_enabled": true,
+                    "splitting": {
+                        "size": 9223372036854775807
+                    },
+                    "vm_snapshot_reattempts": {
+                        "enabled": true,
+                        "interval": {
+                            "type": "minutes",
+                            "count": 5
+                        },
+                        "max_attempts": 3
+                    },
+                    "vss": {
+                        "enabled": true,
+                        "provider": "target_system_defined"
+                    },
+                    "archive": {
+                        "name": "[Machine Name]-[Plan ID]-[Unique ID]A"
+                    },
+                    "performance_window": {
+                        "enabled": false
+                    },
+                    "retention": {
+                        "rules": [
+                            {
+                                "backup_set": [
+                                    "daily"
+                                ],
+                                "max_age": {
+                                    "type": "days",
+                                    "count": 7
+                                }
+                            },
+                            {
+                                "backup_set": [
+                                    "weekly"
+                                ],
+                                "max_age": {
+                                    "type": "weeks",
+                                    "count": 4
+                                }
+                            },
+                            {
+                                "backup_set": [
+                                    "monthly"
+                                ],
+                                "max_age": {
+                                    "type": "months",
+                                    "count": 6
+                                }
+                            }
+                        ],
+                        "after_backup": true
+                    },
+                    "vault": {
+                        "type": "cloud",
+                        "use_policy_credentials": true
+                    },
+                    "alerts": {
+                        "enabled": false,
+                        "max_days_without_backup": 5
+                    },
+                    "email_notifications": {
+                        "enabled": false,
+                        "reattmpts": {
+                            "enabled": true,
+                            "interval": {
+                                "type": "seconds",
+                                "count": 30
+                            },
+                            "max_attempts": 30
+                        },
+                        "subject": "",
+                        "to": [],
+                        "batching": {
+                            "enabled": false,
+                            "timeout": {
+                                "type": "seconds",
+                                "count": 720
+                            }
+                        }
+                    },
+                    "scheduling": {
+                        "backup_sets": [
+                            {
+                                "type": "auto",
+                                "schedule": {
+                                    "alarms": {
+                                        "time": {
+                                            "weekdays": [
+                                                "mon",
+                                                "tue",
+                                                "wed",
+                                                "thu",
+                                                "fri"
+                                            ],
+                                            "rand_max_delay": {
+                                                "type": "minutes",
+                                                "count": 30
+                                            },
+                                            "repeat_at": [
+                                                {
+                                                    "hour": 15,
+                                                    "minute": 45
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "conditions": {},
+                                    "prevent_sleep": true,
+                                    "type": "weekly"
+                                }
+                            }
+                        ],
+                        "enabled": true,
+                        "rand_max_delay": {
+                            "type": "minutes",
+                            "count": 30
+                        },
+                        "scheme": "always_incremental",
+                        "task_failure": {
+                            "enabled": false,
+                            "interval": {
+                                "type": "hours",
+                                "count": 1
+                            },
+                            "max_attempts": 1
+                        },
+                        "weekly_backup_day": "mon"
+                    },
+                    "windows_event_log": {
+                        "enabled": false,
+                        "level": "errors_and_warnings"
+                    },
+                    "cbt": "enable_and_use",
+                    "fast_backup_enabled": true,
+                    "quiesce_snapshotting_enabled": true
+                },
+                "template_source_id": "",
+                "source_type": "machines",
+                "days_without_backup_alert": null,
+                "ls_features": ""
+            }
+        ]
+    }
+}
