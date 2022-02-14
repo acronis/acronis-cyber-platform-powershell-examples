@@ -23,11 +23,11 @@ $json = @"
             "csv_v2_0"
         ],
         "show_skus": true,
-        "hide_zero_usage": "false"
-    },
-    "period": {
-        "start": "2021-10-01",
-        "end": "2021-10-31"
+        "hide_zero_usage": "false",
+        "period": {
+            "start": "2021-10-01",
+            "end": "2021-10-31"
+        }
     },
     "schedule": {
         "type": "once"
