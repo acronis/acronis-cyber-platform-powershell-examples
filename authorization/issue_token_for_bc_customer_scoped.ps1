@@ -24,7 +24,7 @@ $postParams = @{ grant_type = "urn:ietf:params:oauth:grant-type:jwt-bearer"; ass
 $headers["Content-Type"] = "application/x-www-form-urlencoded"
 
 # Exchange tokens
-$token = Acronis-Post -Uri "bc/idp/token" -Body $postParams
+$token = Acronis-Post -Uri "api/2/idp/token" -Body $postParams
 
 # Save the Token info to file for further usage
 # YOU MUST STORE YOUR CREDENTIALS IN SECURE PLACE
