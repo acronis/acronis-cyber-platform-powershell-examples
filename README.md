@@ -2,7 +2,7 @@
 
 !!! info Copyright © 2019-2021 Acronis International GmbH. This is distributed under MIT license.
 
-!!! note The GitHub repository contains not only code for this Hans-on Lab but other advanced code examples. Please, check [Code Directory](#code-directory) for details.
+!!! note The GitHub repository contains not only code for this Hands-on Lab but other advanced code examples. Please, check [Code Directory](#code-directory) for details.
 
 [[TOC]]
 
