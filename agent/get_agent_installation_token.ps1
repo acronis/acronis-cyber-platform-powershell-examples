@@ -10,7 +10,7 @@ $scriptDir = $MyInvocation.MyCommand.Path | Split-Path -Parent
 
 # Get personal_tenant_id for user.json
 $user = Get-Content "${scriptDir}\..\user.json" | ConvertFrom-Json
-$userTenantID = $user.id
+$userTenantID = $user.personal_tenant_id
 
 # Body JSON to create an installation token
 $json = @"
